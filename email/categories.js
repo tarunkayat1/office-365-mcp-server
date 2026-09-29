@@ -91,7 +91,7 @@ async function createCategory(accessToken, params) {
     };
   }
 
-  const response = await callGraphAPI(
+  const _response = await callGraphAPI(
     accessToken,
     'POST',
     'me/outlook/masterCategories',

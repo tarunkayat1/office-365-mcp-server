@@ -10,7 +10,7 @@
  * @param {object} queryParams - Query parameters
  * @returns {object} - Simulated API response
  */
-function simulateGraphAPIResponse(method, path, data, queryParams) {
+function simulateGraphAPIResponse(method, path, data, _queryParams) {
   console.error(`Simulating response for: ${method} ${path}`);
   
   // Email-related simulations

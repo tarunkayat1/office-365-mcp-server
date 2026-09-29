@@ -40,7 +40,7 @@ describe('Security Hardening', () => {
     const testLogPath = path.join(os.tmpdir(), `.office-mcp-audit-test-${Date.now()}.log`);
 
     afterAll(() => {
-      try { fs.unlinkSync(testLogPath); } catch (e) {}
+      try { fs.unlinkSync(testLogPath); } catch (_e) {}
     });
 
     it('should write NDJSON entries with correct fields', () => {

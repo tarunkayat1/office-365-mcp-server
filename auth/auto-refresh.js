@@ -87,7 +87,7 @@ async function refreshAccessToken(tokenPath = config.AUTH_CONFIG.tokenStorePath)
               const tempPath = tokenPath + '.tmp';
               fs.writeFileSync(tempPath, JSON.stringify(newTokens, null, 2), { mode: 0o600 });
               fs.renameSync(tempPath, tokenPath);
-              try { fs.chmodSync(tokenPath, 0o600); } catch (e) { /* Windows may not support chmod */ }
+              try { fs.chmodSync(tokenPath, 0o600); } catch (_e) { /* Windows may not support chmod */ }
 
               console.error('[AUTO-REFRESH] Token refresh successful');
               console.error(`[AUTO-REFRESH] New token expires at: ${new Date(expiresAt).toLocaleString()}`);

@@ -12,7 +12,7 @@
 
 const { ensureAuthenticated } = require('../../auth');
 const { callGraphAPI } = require('../../utils/graph-api');
-const config = require('../../config');
+const _config = require('../../config');
 
 /**
  * Main handler for teams_chat operations
@@ -51,7 +51,7 @@ async function handleTeamsChat(args) {
     return {
       content: [{ 
         type: "text", 
-        text: "Missing required parameter: operation. Valid operations are: list, create, get, update, delete, list_messages, get_message, send_message, update_message, delete_message, list_members, add_member, remove_member" 
+        text: "Missing required parameter: operation. Valid operations are: list, create, get, update, delete, list_messages, get_message, send_message, reply_to_message, update_message, delete_message, list_members, add_member, remove_member" 
       }]
     };
   }
@@ -79,6 +79,8 @@ async function handleTeamsChat(args) {
         return await getChatMessage(accessToken, params);
       case 'send_message':
         return await sendChatMessage(accessToken, params);
+      case 'reply_to_message':
+        return await replyToChatMessage(accessToken, params);
       case 'update_message':
         return await updateChatMessage(accessToken, params);
       case 'delete_message':
@@ -93,7 +95,7 @@ async function handleTeamsChat(args) {
         return {
           content: [{ 
             type: "text", 
-            text: `Invalid operation: ${operation}. Valid operations are: list, create, get, update, delete, list_messages, get_message, send_message, update_message, delete_message, list_members, add_member, remove_member` 
+            text: `Invalid operation: ${operation}. Valid operations are: list, create, get, update, delete, list_messages, get_message, send_message, reply_to_message, update_message, delete_message, list_members, add_member, remove_member` 
           }]
         };
     }
@@ -481,6 +483,63 @@ async function sendChatMessage(accessToken, params) {
 }
 
 /**
+ * Reply to a specific message in a group or 1:1 chat (quoted reply in Teams UI).
+ * Uses Graph replyWithQuote — replyToId on send_message does not thread in chats.
+ */
+async function replyToChatMessage(accessToken, params) {
+  const { chatId, messageId, messageIds, content } = params;
+
+  const ids = Array.isArray(messageIds) && messageIds.length > 0
+    ? messageIds
+    : messageId
+      ? [messageId]
+      : [];
+
+  if (!chatId || ids.length === 0 || !content) {
+    return {
+      content: [{
+        type: "text",
+        text: "Missing required parameters. Please provide chatId, messageId (or messageIds), and content.",
+      }],
+    };
+  }
+
+  if (ids.length > 10) {
+    return {
+      content: [{
+        type: "text",
+        text: "Too many messageIds. replyWithQuote supports at most 10 quoted messages.",
+      }],
+    };
+  }
+
+  const replyData = {
+    messageIds: ids,
+    replyMessage: {
+      body: {
+        content,
+        contentType: content.includes('<') ? 'html' : 'text',
+      },
+    },
+  };
+
+  const response = await callGraphAPI(
+    accessToken,
+    'POST',
+    `chats/${chatId}/messages/replyWithQuote`,
+    replyData,
+  );
+
+  const quoted = ids.length === 1 ? ids[0] : ids.join(', ');
+  return {
+    content: [{
+      type: "text",
+      text: `Reply sent successfully (quoted message${ids.length > 1 ? 's' : ''}: ${quoted})!\nID: ${response.id}`,
+    }],
+  };
+}
+
+/**
  * Update a chat message
  */
 async function updateChatMessage(accessToken, params) {
@@ -703,7 +762,7 @@ function formatDate(dateString) {
   if (!dateString) return 'Unknown';
   try {
     return new Date(dateString).toLocaleString();
-  } catch (error) {
+  } catch (_error) {
     return dateString;
   }
 }

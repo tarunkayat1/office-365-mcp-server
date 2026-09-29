@@ -159,7 +159,7 @@ describe('Planner Module (Consolidated)', () => {
       callGraphAPI.mockResolvedValueOnce({ '@odata.etag': 'W/"bEtag"' });
       callGraphAPI.mockResolvedValueOnce({});
 
-      const result = await plannerHandler({
+      const _result = await plannerHandler({
         entity: 'bucket', operation: 'update', bucketId: 'b1', name: 'Updated'
       });
 

@@ -29,8 +29,8 @@ module.exports = {
 
   // Authentication configuration
   AUTH_CONFIG: {
-    clientId: process.env.OFFICE_CLIENT_ID || '',
-    clientSecret: process.env.OFFICE_CLIENT_SECRET || '',
+    clientId: process.env.OFFICE_CLIENT_ID || process.env.MICROSOFT_CLIENT_ID || '',
+    clientSecret: process.env.OFFICE_CLIENT_SECRET || process.env.MICROSOFT_CLIENT_SECRET || '',
     redirectUri: 'http://localhost:3000/auth/callback',
     scopes: [
       'offline_access',  // CRITICAL: Required for refresh tokens
@@ -108,7 +108,7 @@ module.exports = {
   TEMP_FILES_PATH: process.env.TEMP_FILES_PATH || path.join(homeDir, 'temp', 'files'),
   SHAREPOINT_SYMLINK_PATH: process.env.SHAREPOINT_SYMLINK_PATH || path.join(homeDir, 'temp', 'sharepoint'),
 
-  // Timezone configuration — all calendar/todo operations use Eastern Time
+  // Timezone configuration — calendar/todo wall-clock times use this IANA zone
   DEFAULT_TIMEZONE: process.env.DEFAULT_TIMEZONE || 'America/New_York',
 
   // IANA → Microsoft timezone name mapping
@@ -118,6 +118,7 @@ module.exports = {
     'America/Denver': 'Mountain Standard Time',
     'America/Los_Angeles': 'Pacific Standard Time',
     'America/Phoenix': 'US Mountain Standard Time',
+    'Asia/Kolkata': 'India Standard Time',
     'UTC': 'UTC',
   },
 
@@ -126,7 +127,10 @@ module.exports = {
    * @returns {string} Microsoft timezone name (e.g. "Eastern Standard Time")
    */
   getMsTimezone() {
-    return this.IANA_TO_MS_TIMEZONE[this.DEFAULT_TIMEZONE] || 'Eastern Standard Time';
+    return (
+      this.IANA_TO_MS_TIMEZONE[this.DEFAULT_TIMEZONE] ||
+      this.IANA_TO_MS_TIMEZONE['UTC']
+    );
   },
 
   /**
@@ -146,9 +150,10 @@ module.exports = {
       'Mountain Standard Time': 'MT',
       'Pacific Standard Time': 'PT',
       'US Mountain Standard Time': 'MT',
+      'India Standard Time': 'IST',
       'UTC': 'UTC',
     };
-    const tzAbbrev = tzAbbrevMap[timeZoneName] || tzAbbrevMap[this.getMsTimezone()] || 'ET';
+    const tzAbbrev = tzAbbrevMap[timeZoneName] || tzAbbrevMap[this.getMsTimezone()] || 'UTC';
 
     // Parse wall-clock components via regex (handles "2026-02-24T15:00:00.0000000", etc.)
     const match = dateTimeStr.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);

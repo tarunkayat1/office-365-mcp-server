@@ -9,7 +9,7 @@
  * Run: node test-policy-recipients.js
  */
 
-const assert = require('assert');
+const _assert = require('assert');
 const path = require('path');
 
 const POLICY_PATH = path.join(__dirname, 'policy.js');

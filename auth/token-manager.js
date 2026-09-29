@@ -2,11 +2,31 @@
  * Token management for Microsoft Graph API authentication
  */
 const fs = require('fs');
+const { AsyncLocalStorage } = require('async_hooks');
 const config = require('../config');
 const { refreshAccessToken, needsRefresh } = require('./auto-refresh');
 
 // Global variable to store tokens
 let cachedTokens = null;
+const requestTokenStore = new AsyncLocalStorage();
+
+/**
+ * Run async work with a request-scoped Bearer access token (Ask G1 token bridge).
+ * @param {string|null|undefined} accessToken
+ * @param {() => Promise<unknown>|unknown} fn
+ */
+function runWithAccessToken(accessToken, fn) {
+  const token =
+    typeof accessToken === 'string' && accessToken.trim().length > 0
+      ? accessToken.trim()
+      : null;
+  return requestTokenStore.run(token, fn);
+}
+
+function getRequestAccessToken() {
+  const token = requestTokenStore.getStore();
+  return typeof token === 'string' && token.length > 0 ? token : null;
+}
 
 /**
  * Loads authentication tokens from the token file
@@ -48,7 +68,7 @@ function loadTokenCache() {
 
       cachedTokens = tokens;
       return tokens;
-    } catch (parseError) {
+    } catch (_parseError) {
       console.error('[TOKEN-MANAGER] Error parsing token file');
       return null;
     }
@@ -75,7 +95,7 @@ function saveTokenCache(tokens) {
     // Also ensure correct permissions on final file (for pre-existing files)
     try {
       fs.chmodSync(tokenPath, 0o600);
-    } catch (chmodError) {
+    } catch (_chmodError) {
       // Windows may not support chmod, that's OK
     }
 
@@ -95,6 +115,11 @@ function saveTokenCache(tokens) {
  * @returns {Promise<string>|string|null} - The access token or null if not available
  */
 async function getAccessToken(autoRefresh = true) {
+  const requestToken = getRequestAccessToken();
+  if (requestToken) {
+    return requestToken;
+  }
+
   // First check cache
   if (cachedTokens && cachedTokens.access_token) {
     if (autoRefresh && needsRefresh(cachedTokens)) {
@@ -154,5 +179,7 @@ module.exports = {
   loadTokenCache,
   saveTokenCache,
   getAccessToken,
-  createTestTokens
+  createTestTokens,
+  runWithAccessToken,
+  getRequestAccessToken,
 };

@@ -524,7 +524,7 @@ async function shareFile(accessToken, params) {
       message: "I've shared a file with you"
     };
 
-    const response = await callGraphAPI(
+    const _response = await callGraphAPI(
       accessToken,
       'POST',
       `${itemEndpoint}/invite`,
@@ -740,7 +740,7 @@ async function copyFile(accessToken, params) {
   }
 
   // Copy operation returns a monitor URL
-  const response = await callGraphAPI(
+  const _response = await callGraphAPI(
     accessToken,
     'POST',
     `${driveItemEndpoint(fileId, driveId)}/copy`,

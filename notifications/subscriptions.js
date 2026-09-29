@@ -1,7 +1,7 @@
 /**
  * Subscription management functionality
  */
-const config = require('../config');
+const _config = require('../config');
 const { callGraphAPI } = require('../utils/graph-api');
 const { ensureAuthenticated } = require('../auth');
 
@@ -78,7 +78,7 @@ async function handleCreateSubscription(args) {
  * @param {object} args - Tool arguments
  * @returns {object} - MCP response
  */
-async function handleListSubscriptions(args) {
+async function handleListSubscriptions(_args) {
   try {
     // Get access token
     const accessToken = await ensureAuthenticated();

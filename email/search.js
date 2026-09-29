@@ -621,7 +621,7 @@ async function searchEmailsEnhanced(accessToken, params) {
         text: `Found ${hits.length} emails using enhanced search:\n\n${emailsList}`
       }]
     };
-  } catch (error) {
+  } catch (_error) {
     return await searchEmailsBasic(accessToken, params);
   }
 }

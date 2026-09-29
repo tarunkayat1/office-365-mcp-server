@@ -57,7 +57,7 @@ function getAnchorMailboxFromPath(path) {
 
   try {
     return decodeURIComponent(match[1]);
-  } catch (error) {
+  } catch (_error) {
     return match[1];
   }
 }
@@ -389,7 +389,7 @@ async function callGraphAPI(accessToken, method, path, data = null, queryParams 
             try {
               const errorData = JSON.parse(responseData);
               reject(createGraphAPIError(res.statusCode, responseData, errorData, res.headers));
-            } catch (parseError) {
+            } catch (_parseError) {
               reject(createGraphAPIError(res.statusCode, responseData, null, res.headers));
             }
           }

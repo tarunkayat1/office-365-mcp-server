@@ -202,7 +202,7 @@ async function handleGroups(args) {
                 $select: 'id,displayName,webUrl'
               });
             siteInfo = `\nSite ID: ${site.id}\nSite Name: ${site.displayName}\nSite URL: ${site.webUrl}`;
-          } catch (e) {
+          } catch (_e) {
             // Site lookup may fail for some group types — non-fatal
           }
 

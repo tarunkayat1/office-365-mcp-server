@@ -5,7 +5,7 @@
 
 const { ensureAuthenticated } = require('../auth');
 const { callGraphAPI } = require('../utils/graph-api');
-const config = require('../config');
+const _config = require('../config');
 const { safeTool } = require('../utils/errors');
 
 /**
@@ -307,7 +307,7 @@ async function getContact(accessToken, params) {
   const emails = contact.emailAddresses || [];
   const businessPhones = contact.businessPhones || [];
   const homePhones = contact.homePhones || [];
-  const addresses = contact.businessAddress || contact.homeAddress || {};
+  const _addresses = contact.businessAddress || contact.homeAddress || {};
   
   let details = `Contact Details:
 Name: ${contact.displayName || contact.givenName + ' ' + contact.surname}

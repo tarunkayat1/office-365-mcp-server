@@ -120,6 +120,33 @@ describe('Teams Module - Consolidated Tools', () => {
       expect(operations).toContain('list_members');
     });
 
+    it('should expose chatId in inputSchema for list_messages', () => {
+      expect(chatTool.inputSchema.properties.chatId).toBeDefined();
+      expect(chatTool.inputSchema.properties.maxResults).toBeDefined();
+    });
+
+    it('should handle list_messages when chatId is provided', async () => {
+      callGraphAPI.mockResolvedValue({
+        value: [
+          {
+            id: 'message-1',
+            from: { user: { displayName: 'Alice' } },
+            createdDateTime: '2026-09-28T10:00:00Z',
+            body: { content: 'Hello' },
+          },
+        ],
+      });
+
+      const result = await chatTool.handler({
+        operation: 'list_messages',
+        chatId: '19:chat-id@thread.v2',
+        maxResults: 10,
+      });
+
+      expect(result.content[0].text).toContain('Found 1 messages');
+      expect(callGraphAPI).toHaveBeenCalled();
+    });
+
     it('should handle chat message sending', async () => {
       callGraphAPI.mockResolvedValue({ id: 'message-id' });
 
@@ -130,6 +157,35 @@ describe('Teams Module - Consolidated Tools', () => {
       });
 
       expect(result.content[0].text).toContain('Message sent successfully');
+    });
+
+    it('should expose reply_to_message in schema', () => {
+      const operations = chatTool.inputSchema.properties.operation.enum;
+      expect(operations).toContain('reply_to_message');
+    });
+
+    it('should reply with quote via replyWithQuote endpoint', async () => {
+      callGraphAPI.mockResolvedValue({ id: 'reply-id' });
+
+      const result = await chatTool.handler({
+        operation: 'reply_to_message',
+        chatId: '19:chat-id@thread.v2',
+        messageId: '1790445410669',
+        content: 'On it.',
+      });
+
+      expect(result.content[0].text).toContain('Reply sent successfully');
+      expect(callGraphAPI).toHaveBeenCalledWith(
+        'mock-access-token',
+        'POST',
+        'chats/19:chat-id@thread.v2/messages/replyWithQuote',
+        {
+          messageIds: ['1790445410669'],
+          replyMessage: {
+            body: { content: 'On it.', contentType: 'text' },
+          },
+        },
+      );
     });
   });
 });

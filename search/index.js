@@ -5,7 +5,7 @@
 
 const { ensureAuthenticated } = require('../auth');
 const { callGraphAPI } = require('../utils/graph-api');
-const config = require('../config');
+const _config = require('../config');
 const { safeTool } = require('../utils/errors');
 
 /**

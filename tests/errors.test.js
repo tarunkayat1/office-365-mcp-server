@@ -81,7 +81,7 @@ describe('Error Utilities', () => {
 
   describe('safeTool', () => {
     it('should pass through successful results', async () => {
-      const handler = async (args) => ({
+      const handler = async (_args) => ({
         content: [{ type: 'text', text: 'success' }]
       });
 

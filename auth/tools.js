@@ -24,7 +24,7 @@ async function handleAbout() {
  * @returns {object} - MCP response
  */
 async function handleAuthenticate(args) {
-  const force = args && args.force === true;
+  const _force = args && args.force === true;
   
   // For test mode, create a test token
   if (config.USE_TEST_MODE) {

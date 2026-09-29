@@ -24,7 +24,7 @@ function escapeHtml(str) {
 const app = express();
 
 // CORS: only allow requests from the auth server itself
-app.use((req, res, next) => {
+app.use((_req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', `http://localhost:${PORT}`);
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -42,7 +42,7 @@ function generateState() {
 }
 
 // Root route with authentication instructions
-app.get('/', (req, res) => {
+app.get('/', (_req, res) => {
   res.send(`
     <html>
       <head>
@@ -76,7 +76,7 @@ app.get('/', (req, res) => {
 });
 
 // Handle auth route - redirect to Microsoft's OAuth endpoint
-app.get('/auth', (req, res) => {
+app.get('/auth', (_req, res) => {
   console.log('Auth request received, redirecting to Microsoft login...');
   
   // Load environment variables or use config
@@ -191,7 +191,7 @@ app.get('/auth/callback', async (req, res) => {
   console.log('Authorization code received, exchanging for tokens...');
   
   exchangeCodeForTokens(code)
-    .then((tokens) => {
+    .then((_tokens) => {
       console.log('Token exchange successful');
       res.send(`
         <html>
@@ -239,7 +239,7 @@ app.get('/auth/callback', async (req, res) => {
 });
 
 // API endpoint to check server status (read-only, localhost-only)
-app.get('/api/status', (req, res) => {
+app.get('/api/status', (_req, res) => {
   res.json({
     status: 'running',
     port: PORT,
@@ -306,7 +306,7 @@ function exchangeCodeForTokens(code) {
             const tempFile = TOKEN_FILE + '.tmp';
             fs.writeFileSync(tempFile, JSON.stringify(tokenResponse, null, 2), { mode: 0o600 });
             fs.renameSync(tempFile, TOKEN_FILE);
-            try { fs.chmodSync(TOKEN_FILE, 0o600); } catch (e) { /* Windows may not support chmod */ }
+            try { fs.chmodSync(TOKEN_FILE, 0o600); } catch (_e) { /* Windows may not support chmod */ }
             console.log(`Tokens saved securely to ${TOKEN_FILE}`);
             
             resolve(tokenResponse);

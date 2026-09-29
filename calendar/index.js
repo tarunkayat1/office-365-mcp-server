@@ -20,6 +20,103 @@ function hasTzIndicator(dt) {
   return /[+-]\d{2}:\d{2}$/.test(dt);
 }
 
+const VALID_RECURRENCE_PATTERN_TYPES = new Set([
+  "daily",
+  "weekly",
+  "absoluteMonthly",
+  "relativeMonthly",
+  "absoluteYearly",
+  "relativeYearly",
+]);
+
+const VALID_RECURRENCE_RANGE_TYPES = new Set(["endDate", "noEnd", "numbered"]);
+
+function isNonEmptyString(value) {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isDateOnlyString(value) {
+  return isNonEmptyString(value) && /^\d{4}-\d{2}-\d{2}$/.test(value.trim());
+}
+
+function omitEmptyObjectFields(record) {
+  return Object.fromEntries(
+    Object.entries(record).filter(([, value]) => {
+      if (value === undefined || value === null) return false;
+      if (typeof value === "string") return value.trim().length > 0;
+      if (Array.isArray(value)) return value.length > 0;
+      return true;
+    }),
+  );
+}
+
+/** Build Graph recurrence payload only when pattern and range are complete. */
+function buildGraphRecurrence(recurrence) {
+  if (!recurrence || typeof recurrence !== "object") {
+    return null;
+  }
+
+  const pattern = recurrence.pattern;
+  const range = recurrence.range;
+  if (!pattern?.type || !range?.type) {
+    return null;
+  }
+
+  if (
+    !VALID_RECURRENCE_PATTERN_TYPES.has(pattern.type) ||
+    !VALID_RECURRENCE_RANGE_TYPES.has(range.type)
+  ) {
+    return null;
+  }
+
+  if (!isDateOnlyString(range.startDate)) {
+    return null;
+  }
+
+  if (range.type === "endDate" && !isDateOnlyString(range.endDate)) {
+    return null;
+  }
+
+  if (range.type === "numbered" && !(Number(range.numberOfOccurrences) > 0)) {
+    return null;
+  }
+
+  if (
+    pattern.type === "weekly" &&
+    (!Array.isArray(pattern.daysOfWeek) || pattern.daysOfWeek.length === 0)
+  ) {
+    return null;
+  }
+
+  const graphPattern = omitEmptyObjectFields({
+    type: pattern.type,
+    interval: Number(pattern.interval) > 0 ? Number(pattern.interval) : 1,
+    daysOfWeek: pattern.daysOfWeek,
+    dayOfMonth: pattern.dayOfMonth,
+    month: pattern.month,
+    firstDayOfWeek: pattern.firstDayOfWeek || "sunday",
+    index: pattern.index,
+  });
+
+  const graphRange = omitEmptyObjectFields({
+    type: range.type,
+    startDate: range.startDate.trim(),
+    endDate: isDateOnlyString(range.endDate) ? range.endDate.trim() : undefined,
+    numberOfOccurrences:
+      Number(range.numberOfOccurrences) > 0
+        ? Number(range.numberOfOccurrences)
+        : undefined,
+    recurrenceTimeZone: isNonEmptyString(range.recurrenceTimeZone)
+      ? range.recurrenceTimeZone.trim()
+      : config.getMsTimezone(),
+  });
+
+  return {
+    pattern: graphPattern,
+    range: graphRange,
+  };
+}
+
 /**
  * Unified calendar handler for all calendar operations
  */
@@ -192,8 +289,21 @@ function formatCalendarResponse(response) {
 }
 
 async function createCalendarEvent(accessToken, params) {
-  const { subject, content, start, end, location, attendees, isOnlineMeeting, recurrence } = params;
-  
+  const {
+    subject,
+    content,
+    start: startParam,
+    end: endParam,
+    startDateTime,
+    endDateTime,
+    location,
+    attendees,
+    isOnlineMeeting,
+    recurrence,
+  } = params;
+  const start = startParam || startDateTime;
+  const end = endParam || endDateTime;
+
   if (!subject || !start || !end) {
     return {
       content: [{ 
@@ -235,28 +345,15 @@ async function createCalendarEvent(accessToken, params) {
     event.onlineMeetingProvider = "teamsForBusiness";
   }
   
-  // Add recurrence support
-  if (recurrence) {
-    event.recurrence = {
-      pattern: {
-        type: recurrence.pattern.type, // daily, weekly, absoluteMonthly, relativeMonthly, absoluteYearly, relativeYearly
-        interval: recurrence.pattern.interval || 1,
-        daysOfWeek: recurrence.pattern.daysOfWeek, // for weekly: ["monday", "wednesday"]
-        dayOfMonth: recurrence.pattern.dayOfMonth, // for absoluteMonthly
-        month: recurrence.pattern.month, // for yearly patterns
-        firstDayOfWeek: recurrence.pattern.firstDayOfWeek || 'sunday',
-        index: recurrence.pattern.index // for relativeMonthly: "first", "second", "third", "fourth", "last"
-      },
-      range: {
-        type: recurrence.range.type, // endDate, noEnd, numbered
-        startDate: recurrence.range.startDate,
-        endDate: recurrence.range.endDate,
-        numberOfOccurrences: recurrence.range.numberOfOccurrences,
-        recurrenceTimeZone: recurrence.range.recurrenceTimeZone || config.getMsTimezone()
-      }
-    };
+  const graphRecurrence = buildGraphRecurrence(recurrence);
+  if (graphRecurrence) {
+    event.recurrence = graphRecurrence;
+  } else if (recurrence && typeof recurrence === "object") {
+    console.error(
+      "Skipping invalid recurrence payload for one-time calendar create",
+    );
   }
-  
+
   const response = await callGraphAPI(
     accessToken,
     'POST',
@@ -424,7 +521,8 @@ const calendarTools = [
         // Recurrence parameters (for create)
         recurrence: {
           type: "object",
-          description: "Recurrence pattern and range for recurring events",
+          description:
+            "Optional recurrence for repeating events only. Omit entirely for one-time events.",
           properties: {
             pattern: {
               type: "object",
@@ -477,4 +575,4 @@ const calendarTools = [
   }
 ];
 
-module.exports = { calendarTools };
+module.exports = { calendarTools, buildGraphRecurrence };
