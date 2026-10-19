@@ -61,7 +61,19 @@ async function handleTeamsChat(args) {
     console.error('teams_chat params:', JSON.stringify(params));
     
     const accessToken = await ensureAuthenticated();
-    
+
+    // Small models garble or truncate long chat IDs and sometimes pass a name
+    // instead. Repair the ID, or look the chat up, before calling Graph.
+    if (operation !== 'list' && operation !== 'create') {
+      const resolved = await resolveChatParam(accessToken, params);
+      if (resolved.error) {
+        return { content: [{ type: "text", text: resolved.error }] };
+      }
+      if (!params.chatId && operation === 'list_messages') {
+        return await listLatestMessagesAcrossChats(accessToken, params.maxResults);
+      }
+    }
+
     switch (operation) {
       case 'list':
         return await listChats(accessToken, params);
@@ -105,6 +117,106 @@ async function handleTeamsChat(args) {
       content: [{ type: "text", text: `Error in teams_chat operation: ${error.message}` }]
     };
   }
+}
+
+const MIN_ID_PREFIX = 24;
+
+function commonPrefixLength(a, b) {
+  const max = Math.min(a.length, b.length);
+  let i = 0;
+  while (i < max && a[i] === b[i]) i += 1;
+  return i;
+}
+
+/**
+ * Makes params.chatId usable: keeps a valid ID, repairs a garbled/truncated one
+ * by its leading characters, or finds the chat from a name/email in
+ * params.recipient. Mutates params. Returns { error } only when it is ambiguous.
+ */
+async function resolveChatParam(accessToken, params) {
+  const recipient = params.recipient || params.to || params.userName;
+
+  if (!params.chatId) {
+    if (recipient) {
+      const match = await findChatByName(accessToken, String(recipient));
+      if (match.error) return { error: match.error };
+      params.chatId = match.chatId;
+    }
+    return {};
+  }
+
+  try {
+    const response = await callGraphAPI(accessToken, 'GET', 'me/chats', null, {
+      $top: 50,
+      $select: 'id'
+    });
+    const ids = (response.value || []).map((c) => c.id);
+    if (ids.includes(params.chatId)) return {};
+
+    const scored = ids
+      .map((id) => ({ id, score: commonPrefixLength(id, params.chatId) }))
+      .filter((c) => c.score >= MIN_ID_PREFIX)
+      .sort((a, b) => b.score - a.score);
+    if (scored.length > 0 && (scored.length === 1 || scored[0].score > scored[1].score)) {
+      console.error(`Repaired chatId ${params.chatId} -> ${scored[0].id}`);
+      params.chatId = scored[0].id;
+    }
+  } catch (error) {
+    console.error('Could not verify chatId:', error.message);
+  }
+  return {};
+}
+
+/**
+ * Newest messages across the user's most recently active chats.
+ * Used when list_messages is called without a chatId.
+ */
+async function listLatestMessagesAcrossChats(accessToken, maxResults = 10) {
+  const limit = Math.max(1, Math.min(Number(maxResults) || 10, 25));
+  const allChats = await callGraphAPI(accessToken, 'GET', 'me/chats', null, {
+    $top: 50,
+    $expand: 'members',
+    $select: 'id,topic,chatType,lastUpdatedDateTime'
+  });
+  const recentChats = (allChats.value || [])
+    .sort((a, b) => new Date(b.lastUpdatedDateTime) - new Date(a.lastUpdatedDateTime))
+    .slice(0, 8);
+
+  const collected = [];
+  await Promise.all(recentChats.map(async (chat) => {
+    const name = chat.topic ||
+      (chat.members || []).map((m) => m.displayName).filter(Boolean).join(', ') || 'Chat';
+    try {
+      const response = await callGraphAPI(accessToken, 'GET', `chats/${chat.id}/messages`, null, {
+        $top: 5,
+        $orderby: 'createdDateTime desc'
+      });
+      for (const message of response.value || []) {
+        if (message.messageType && message.messageType !== 'message') continue;
+        collected.push({ chat, name, message });
+      }
+    } catch (error) {
+      console.error(`Could not read messages for chat ${chat.id}:`, error.message);
+    }
+  }));
+
+  if (collected.length === 0) {
+    return { content: [{ type: "text", text: "No recent Teams chat messages found." }] };
+  }
+
+  collected.sort((a, b) => new Date(b.message.createdDateTime) - new Date(a.message.createdDateTime));
+  const lines = collected.slice(0, limit).map(({ chat, name, message }, index) => {
+    const sender = message.from?.user?.displayName || message.from?.application?.displayName || 'Unknown';
+    const preview = message.body?.content ? truncateContent(message.body.content, 200) : 'No content';
+    return `${index + 1}. ${name} | ${sender} (${formatDate(message.createdDateTime)})\n   ${preview}\n   (chatId: ${chat.id})`;
+  });
+
+  return {
+    content: [{
+      type: "text",
+      text: `Latest ${lines.length} Teams chat messages:\n\n${lines.join('\n\n')}`
+    }]
+  };
 }
 
 /**
@@ -433,11 +545,70 @@ async function getChatMessage(accessToken, params) {
 }
 
 /**
+ * Find an existing chat by person name, email or group topic.
+ * Prefers a 1:1 chat; reports ambiguity or no match via `error`.
+ */
+async function findChatByName(accessToken, query) {
+  // Display names often hold stray spaces ("Naveen  Vashist"), so compare on
+  // whitespace-collapsed words, in any order.
+  const normalize = (text) =>
+    String(text || '').toLowerCase().normalize('NFKD').replace(/[̀-ͯ]/g, '')
+      .replace(/[^a-z0-9@.\s-]/g, ' ').replace(/\s+/g, ' ').trim();
+  const needle = normalize(query);
+  const needleWords = needle.split(' ').filter(Boolean);
+  const containsAllWords = (text) => {
+    const haystack = normalize(text);
+    return needleWords.length > 0 && needleWords.every((word) => haystack.includes(word));
+  };
+
+  const response = await callGraphAPI(accessToken, 'GET', 'me/chats', null, {
+    $top: 50,
+    $expand: 'members',
+    $select: 'id,topic,chatType,lastUpdatedDateTime'
+  });
+
+  const label = (chat) =>
+    chat.topic || (chat.members || []).map((m) => m.displayName).filter(Boolean).join(', ') || chat.id;
+
+  const matches = (response.value || []).filter((chat) => {
+    if (chat.topic && containsAllWords(chat.topic)) return true;
+    return (chat.members || []).some(
+      (m) => containsAllWords(m.displayName) || normalize(m.email) === needle
+    );
+  });
+
+  const oneOnOne = matches.filter((c) => c.chatType === 'oneOnOne' && (c.members || []).length === 2);
+  const candidates = oneOnOne.length > 0 ? oneOnOne : matches;
+
+  if (candidates.length === 0) {
+    return {
+      error: `No existing chat found for "${query}". Use teams_chat create with the person's email in members to start one, then send_message with the new chatId.`
+    };
+  }
+  if (candidates.length > 1) {
+    const list = candidates.map((c) => `- ${label(c)} (chatId: ${c.id})`).join('\n');
+    return { error: `Several chats match "${query}". Retry send_message with one of these chatIds:\n${list}` };
+  }
+  return { chatId: candidates[0].id };
+}
+
+/**
  * Send a message to a chat
  */
 async function sendChatMessage(accessToken, params) {
-  const { chatId, content, replyToId, attachments } = params;
-  
+  const { content, replyToId, attachments } = params;
+  let { chatId } = params;
+
+  // Allow addressing by person/group name or email instead of a chat ID.
+  const recipient = params.recipient || params.to || params.userName || params.email;
+  if (!chatId && recipient && content) {
+    const match = await findChatByName(accessToken, String(recipient));
+    if (match.error) {
+      return { content: [{ type: "text", text: match.error }] };
+    }
+    chatId = match.chatId;
+  }
+
   if (!chatId || !content) {
     return {
       content: [{ 

@@ -38,7 +38,21 @@ async function handleTeamsChannel(args) {
     console.error('teams_channel params:', JSON.stringify(params));
     
     const accessToken = await ensureAuthenticated();
-    
+
+    // Callers often know only the channel ID (19:...@thread.tacv2); find its team.
+    if (params.channelId && !params.teamId) {
+      const teamId = await resolveTeamIdForChannel(accessToken, params.channelId);
+      if (teamId) params.teamId = teamId;
+    }
+
+    // Nothing to scope the call to: show the user's teams/channels so the caller can pick one.
+    if (!params.teamId) {
+      if (operation === 'list_messages') {
+        return await listLatestMessagesAcrossChannels(accessToken, params.maxResults);
+      }
+      return await describeTeamsAndChannels(accessToken, operation);
+    }
+
     switch (operation) {
       case 'list':
         return await listChannels(accessToken, params);
@@ -80,6 +94,140 @@ async function handleTeamsChannel(args) {
       content: [{ type: "text", text: `Error in teams_channel operation: ${error.message}` }]
     };
   }
+}
+
+/**
+ * Find the joined team that contains a channel. Returns null if none matches.
+ */
+async function resolveTeamIdForChannel(accessToken, channelId) {
+  try {
+    const teams = await callGraphAPI(accessToken, 'GET', 'me/joinedTeams', null, {
+      $select: 'id'
+    });
+    for (const team of teams.value || []) {
+      try {
+        const channels = await callGraphAPI(accessToken, 'GET', `teams/${team.id}/channels`, null, {
+          $select: 'id'
+        });
+        if ((channels.value || []).some((c) => c.id === channelId)) {
+          return team.id;
+        }
+      } catch (error) {
+        console.error(`Could not list channels for team ${team.id}:`, error.message);
+      }
+    }
+  } catch (error) {
+    console.error('Could not resolve team for channel:', error.message);
+  }
+  return null;
+}
+
+const MAX_CHANNELS_SCANNED = 20;
+const PER_CHANNEL_FETCH = 5;
+
+/**
+ * Latest messages across the user's joined teams/channels, newest first.
+ * Used when list_messages is called without a teamId/channelId.
+ */
+async function listLatestMessagesAcrossChannels(accessToken, maxResults = 10) {
+  const limit = Math.max(1, Math.min(Number(maxResults) || 10, 25));
+  const teams = await callGraphAPI(accessToken, 'GET', 'me/joinedTeams', null, {
+    $select: 'id,displayName'
+  });
+
+  const targets = [];
+  for (const team of teams.value || []) {
+    if (targets.length >= MAX_CHANNELS_SCANNED) break;
+    try {
+      const channels = await callGraphAPI(accessToken, 'GET', `teams/${team.id}/channels`, null, {
+        $select: 'id,displayName'
+      });
+      for (const channel of channels.value || []) {
+        if (targets.length < MAX_CHANNELS_SCANNED) targets.push({ team, channel });
+      }
+    } catch (error) {
+      console.error(`Could not list channels for team ${team.id}:`, error.message);
+    }
+  }
+
+  const collected = [];
+  await Promise.all(targets.map(async ({ team, channel }) => {
+    try {
+      const response = await callGraphAPI(
+        accessToken,
+        'GET',
+        `teams/${team.id}/channels/${channel.id}/messages`,
+        null,
+        { $top: PER_CHANNEL_FETCH }
+      );
+      for (const message of response.value || []) {
+        if (message.messageType && message.messageType !== 'message') continue;
+        collected.push({ team, channel, message });
+      }
+    } catch (error) {
+      console.error(`Could not read messages for channel ${channel.id}:`, error.message);
+    }
+  }));
+
+  if (collected.length === 0) {
+    return {
+      content: [{ type: "text", text: "No recent messages found in your Teams channels. Personal and group messages are in Teams chats: call teams_chat with operation list_messages." }]
+    };
+  }
+
+  collected.sort((a, b) => new Date(b.message.createdDateTime) - new Date(a.message.createdDateTime));
+  const lines = collected.slice(0, limit).map(({ team, channel, message }, index) => {
+    const sender = message.from?.user?.displayName || message.from?.application?.displayName || 'Unknown';
+    const when = new Date(message.createdDateTime).toLocaleString();
+    const preview = message.body?.content ? truncateContent(message.body.content, 200) : 'No content';
+    return `${index + 1}. ${team.displayName} > ${channel.displayName} | ${sender} (${when})\n   ${preview}\n   (teamId: ${team.id}, channelId: ${channel.id}, messageId: ${message.id})`;
+  });
+
+  return {
+    content: [{
+      type: "text",
+      text: `Latest ${lines.length} channel messages across your teams:\n\n${lines.join('\n\n')}`
+    }]
+  };
+}
+
+/**
+ * Build a directory of joined teams and their channels (with IDs) for callers
+ * that did not supply teamId/channelId.
+ */
+async function describeTeamsAndChannels(accessToken, operation) {
+  const teams = await callGraphAPI(accessToken, 'GET', 'me/joinedTeams', null, {
+    $select: 'id,displayName'
+  });
+
+  if (!teams.value || teams.value.length === 0) {
+    return {
+      content: [{ type: "text", text: "You are not a member of any Teams teams." }]
+    };
+  }
+
+  const sections = [];
+  for (const team of teams.value) {
+    let channelLines;
+    try {
+      const channels = await callGraphAPI(accessToken, 'GET', `teams/${team.id}/channels`, null, {
+        $select: 'id,displayName'
+      });
+      channelLines = (channels.value || [])
+        .map((c) => `   - ${c.displayName} (channelId: ${c.id})`)
+        .join('\n');
+    } catch (error) {
+      channelLines = `   (could not list channels: ${error.message})`;
+    }
+    sections.push(`${team.displayName} (teamId: ${team.id})\n${channelLines}`);
+  }
+
+  return {
+    content: [{
+      type: "text",
+      text: `Operation "${operation}" needs teamId and channelId. Choose a channel below and call again with both IDs (for the latest messages, use list_messages).\n\n${sections.join('\n\n')}`
+    }]
+  };
 }
 
 /**

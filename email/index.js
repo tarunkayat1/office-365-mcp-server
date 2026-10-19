@@ -375,7 +375,10 @@ async function listEmails(accessToken, params) {
     const fromAddress = email.from?.emailAddress?.address || email.from?.address || 'Unknown sender';
     const fromName = email.from?.emailAddress?.name || email.from?.name || '';
     const fromDisplay = fromName ? `${fromName} <${fromAddress}>` : fromAddress;
-    return `- ${email.subject || '(No subject)'}${attachments}\n  From: ${fromDisplay}\n  Date: ${new Date(email.receivedDateTime).toLocaleString()}\n  ID: ${email.id}\n`;
+    const preview = (email.bodyPreview || '').replace(/\s+/g, ' ').trim().substring(0, 300);
+    const previewLine = preview ? `\n  Preview: ${preview}` : '';
+    const importanceLine = email.importance && email.importance !== 'normal' ? `\n  Importance: ${email.importance}` : '';
+    return `- ${email.subject || '(No subject)'}${attachments}\n  From: ${fromDisplay}\n  Date: ${new Date(email.receivedDateTime).toLocaleString()}${importanceLine}${previewLine}\n  ID: ${email.id}\n`;
   }).join('\n');
 
   return {

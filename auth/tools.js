@@ -56,7 +56,17 @@ async function handleAuthenticate(args) {
  */
 async function handleCheckAuthStatus() {
   console.error('[CHECK-AUTH-STATUS] Starting authentication status check');
-  
+
+  // Ask G1 passes the user's Microsoft token per request; it is not in the token file.
+  if (tokenManager.getRequestAccessToken()) {
+    return {
+      content: [{
+        type: "text",
+        text: "Authenticated and ready (Microsoft account connected). No sign-in is needed; call the mail, calendar, teams_chat or other tool directly."
+      }]
+    };
+  }
+
   const tokens = tokenManager.loadTokenCache();
   
   console.error(`[CHECK-AUTH-STATUS] Tokens loaded: ${tokens ? 'YES' : 'NO'}`);

@@ -129,6 +129,11 @@ const chatToolSchema = {
       description:
         'Teams chat ID from teams_chat list (required for list_messages, get, send_message, and most non-list operations)',
     },
+    recipient: {
+      type: 'string',
+      description:
+        'send_message only: person name, email, or group topic to message when chatId is unknown (an existing chat is looked up)',
+    },
     messageId: {
       type: 'string',
       description: 'Chat message ID from list_messages (reply_to_message, get_message, update_message, delete_message)',
