@@ -154,7 +154,7 @@ To use this MCP server you need to first register and configure an app in Azure 
 ```bash
 # Azure App Registration
 OFFICE_CLIENT_ID=your-azure-app-client-id
-OFFICE_CLIENT_SECRET=your-azure-app-client-secret
+OFFICE_CLIENT_SECRET=[REDACTED]
 OFFICE_TENANT_ID=common
 
 # Authentication
@@ -195,7 +195,7 @@ HTTP_HOST=127.0.0.1
       "args": ["/path/to/office-mcp/index.js"],
       "env": {
         "OFFICE_CLIENT_ID": "your-client-id",
-        "OFFICE_CLIENT_SECRET": "your-client-secret",
+        "OFFICE_CLIENT_SECRET": "[REDACTED]",
         "SHAREPOINT_SYNC_PATH": "/path/to/sharepoint",
         "ONEDRIVE_SYNC_PATH": "/path/to/onedrive"
       }
@@ -302,3 +302,5 @@ Contributions are welcome! Please:
 ## License
 
 MIT License - See LICENSE file for details
+
+QA test - delete this branch.
